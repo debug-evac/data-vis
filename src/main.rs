@@ -13,6 +13,11 @@ use winit::{
     event::{Event, WindowEvent},
     window::Window,
 };
+use nalgebra::{
+    Perspective3,
+    Point3, 
+    base::{Matrix4, Vector3}
+};
 
 const TITLE: &str = "Hello, imgui-rs!";
 
@@ -37,13 +42,28 @@ fn main() {
 
     let data = &[
         VerticesTest { position: [0.0, 0.0, 0.0] },
-        VerticesTest { position: [0.0, 1.0, 0.0] },
-        VerticesTest { position: [0.0, 0.0, 0.0] },
         VerticesTest { position: [1.0, 0.0, 0.0] },
+        VerticesTest { position: [1.0, 1.0, 0.0] },
+        VerticesTest { position: [0.0, 1.0, 0.0] },
+
+        VerticesTest { position: [0.0, 0.0, 0.0] },
+        VerticesTest { position: [0.0, 0.0, 1.0] },
+        VerticesTest { position: [1.0, 0.0, 1.0] },
+        VerticesTest { position: [1.0, 0.0, 0.0] },
+
+        VerticesTest { position: [1.0, 0.0, 1.0] },
+        VerticesTest { position: [1.0, 1.0, 1.0] },
+        VerticesTest { position: [1.0, 1.0, 0.0] },
+        VerticesTest { position: [1.0, 1.0, 1.0] },
+
+        VerticesTest { position: [0.0, 1.0, 1.0] },
+        VerticesTest { position: [0.0, 1.0, 0.0] },
+        VerticesTest { position: [0.0, 1.0, 1.0] },
+        VerticesTest { position: [0.0, 0.0, 1.0] },
     ];
 
     let vertex_buffer = glium::vertex::VertexBuffer::new(&display, data).unwrap();
-    let indices = glium::index::NoIndices(glium::index::PrimitiveType::LinesList);
+    let indices = glium::index::NoIndices(glium::index::PrimitiveType::LineStrip);
 
     let vertex_shader_src = r#"
     #version 330
@@ -80,13 +100,21 @@ fn main() {
     // Timer for FPS calculation
     let mut last_frame = std::time::Instant::now();
 
-    let mut distance_to_camera = 0.0;
     let mut mvp_matrix = [
         [1.0, 0.0, 0.0, 0.0],
         [0.0, 1.0, 0.0, 0.0],
         [0.0, 0.0, 1.0, 0.0],
         [0.0, 0.0, 0.0, 1.0f32]
     ];
+
+    let mut distance_to_camera = -8.0;
+    let mut want_cursor_capture = false;
+    let mut rotation_angles = (0.0, 0.0);
+    let mut last_position = (0.0, 0.0);
+
+    let aspect_ration = window.inner_size().width as f32 / std::cmp::max(1, window.inner_size().width) as f32;
+
+    let mut projection_matrix: Perspective3<f32> = Perspective3::new(aspect_ration, 45.0, 0.05, 25.0);
 
     // Standard winit event loop
     event_loop
@@ -110,7 +138,7 @@ fn main() {
                 let ui = imgui_context.frame();
 
                 // Draw our example content
-                ui.show_demo_window(&mut true);
+                //ui.show_demo_window(&mut true);
 
                 // Setup for drawing
                 let mut target = display.draw();
@@ -138,40 +166,79 @@ fn main() {
                 event: winit::event::WindowEvent::Resized(new_size),
                 ..
             } => {
-                if new_size.width > 0 && new_size.height > 0 {
-                    display.resize((new_size.width, new_size.height));
-                }
+                let aspect_ration: f32 = new_size.width as f32 / std::cmp::max(1, new_size.height) as f32;
+
+                projection_matrix.set_aspect(aspect_ration);
+                mvp_matrix = update_mvp_matrix(projection_matrix, distance_to_camera, &rotation_angles).into();
+
                 winit_platform.handle_event(imgui_context.io_mut(), &window, &event);
             }
             Event::WindowEvent {
                 event: WindowEvent::MouseWheel {delta, ..},
                 ..
             } => {
-                match delta {
-                    winit::event::MouseScrollDelta::LineDelta(_, y) => {
-                        distance_to_camera += y / 500.0
-                    },
-                    _ => {},
+                if imgui_context.io().want_capture_mouse {
+                    winit_platform.handle_event(imgui_context.io_mut(), &window, &event);
+                } else {
+                    if let winit::event::MouseScrollDelta::LineDelta(_, y) = delta {
+                        distance_to_camera += y / 5.0;
+                        mvp_matrix = update_mvp_matrix(projection_matrix, distance_to_camera, &rotation_angles).into();
+                        window.request_redraw();
+                    }
                 }
-                winit_platform.handle_event(imgui_context.io_mut(), &window, &event);
             },
             Event::WindowEvent {
-                event: WindowEvent::MouseInput { state, button, .. },
+                event: WindowEvent::MouseInput { state, button: winit::event::MouseButton::Left, .. },
                 ..
             } => {
-                /*match delta {
-                    winit::event::MouseScrollDelta::LineDelta(_, y) => {
-                        distance_to_camera += y / 500.0
-                    },
-                    _ => {},
-                }*/
-                winit_platform.handle_event(imgui_context.io_mut(), &window, &event);
+                if imgui_context.io().want_capture_mouse {
+                    winit_platform.handle_event(imgui_context.io_mut(), &window, &event);
+                } else {
+                    match state {
+                        winit::event::ElementState::Pressed => {
+                            last_position = (imgui_context.io().mouse_pos[0], imgui_context.io().mouse_pos[1]);
+                            want_cursor_capture = true;
+                        },
+                        winit::event::ElementState::Released => {
+                            want_cursor_capture = false;
+                        },
+                    }
+                }
             },
-            event => {
-                winit_platform.handle_event(imgui_context.io_mut(), &window, &event);
-            }
+            Event::WindowEvent {
+                event: WindowEvent::CursorMoved { position, .. },
+                ..
+            } => {
+                if imgui_context.io().want_capture_mouse || !want_cursor_capture {
+                    winit_platform.handle_event(imgui_context.io_mut(), &window, &event);
+                } else {
+                    let mouse_dif = ((position.x as f32) - last_position.0, (position.y as f32) - last_position.1);
+
+                    rotation_angles = ((rotation_angles.0 + mouse_dif.0/220.0) % 3.6,
+                        (rotation_angles.1 + mouse_dif.1/220.0) % 3.6);
+
+                    last_position = (position.x as f32, position.y as f32);
+
+                    mvp_matrix = update_mvp_matrix(projection_matrix, distance_to_camera, &rotation_angles).into();
+
+                    window.request_redraw();
+                }
+            },
+            event => winit_platform.handle_event(imgui_context.io_mut(), &window, &event),
         })
         .expect("EventLoop error");
+}
+
+fn update_mvp_matrix(projection_matrix: Perspective3<f32>, distance_to_camera: f32, rotation_angles: &(f32, f32)) -> Matrix4<f32> {
+    let mut mv_matrix: Matrix4<f32> = Matrix4::identity();
+
+    mv_matrix = mv_matrix.append_translation(&Vector3::new(0.0, 0.0, distance_to_camera));
+    mv_matrix *= Matrix4::new_rotation_wrt_point(Vector3::new(rotation_angles.1, 0.0, 0.0), Point3::new(1.0, 1.0, 1.0));
+    mv_matrix *= Matrix4::new_rotation_wrt_point(Vector3::new(0.0, rotation_angles.0, 0.0), Point3::new(1.0, 1.0, 1.0));
+    mv_matrix = mv_matrix.append_translation(&Vector3::new(-1.0, -1.0, -1.0));
+    mv_matrix = mv_matrix.prepend_scaling(2.0);
+
+    projection_matrix.to_homogeneous() * mv_matrix
 }
 
 fn create_window() -> (EventLoop<()>, Window, glium::Display<WindowSurface>) {
@@ -179,7 +246,7 @@ fn create_window() -> (EventLoop<()>, Window, glium::Display<WindowSurface>) {
 
     let window_builder = WindowBuilder::new()
         .with_title(TITLE)
-        .with_inner_size(LogicalSize::new(1024, 768));
+        .with_inner_size(LogicalSize::new(1600, 900));
 
     let (window, cfg) = glutin_winit::DisplayBuilder::new()
         .with_window_builder(Some(window_builder))
@@ -198,8 +265,8 @@ fn create_window() -> (EventLoop<()>, Window, glium::Display<WindowSurface>) {
 
     let surface_attribs = SurfaceAttributesBuilder::<WindowSurface>::new().build(
         window.raw_window_handle(),
-        NonZeroU32::new(1024).unwrap(),
-        NonZeroU32::new(768).unwrap(),
+        NonZeroU32::new(1600).unwrap(),
+        NonZeroU32::new(900).unwrap(),
     );
     let surface = unsafe {
         cfg.display()
