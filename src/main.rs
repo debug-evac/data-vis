@@ -1,3 +1,5 @@
+mod data_src;
+
 use std::num::NonZeroU32;
 
 use glium::{Surface, implement_vertex, uniform};
