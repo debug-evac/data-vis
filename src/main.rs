@@ -1,7 +1,9 @@
 mod data_src;
+mod data_volume_cube;
 
 use std::num::NonZeroU32;
 
+use data_volume_cube::DataVolumeBoundingBoxRenderer;
 use glium::{Surface, implement_vertex, uniform};
 use glutin::{
     config::ConfigTemplateBuilder,
@@ -23,14 +25,6 @@ use nalgebra::{
 
 const TITLE: &str = "Hello, imgui-rs!";
 
-#[derive(Copy, Clone)]
-struct VerticesTest {
-    position: [f32; 3],
-    //texcoords: [f32; 2]
-}
-
-implement_vertex!(VerticesTest, position);
-
 fn main() {
     // Common setup for creating a winit window and imgui context, not specifc
     // to this renderer at all except that glutin is used to create the window
@@ -42,54 +36,6 @@ fn main() {
     let mut renderer = imgui_glium_renderer::Renderer::init(&mut imgui_context, &display)
         .expect("Failed to initialize renderer");
 
-    let data = &[
-        VerticesTest { position: [0.0, 0.0, 0.0] },
-        VerticesTest { position: [1.0, 0.0, 0.0] },
-        VerticesTest { position: [1.0, 1.0, 0.0] },
-        VerticesTest { position: [0.0, 1.0, 0.0] },
-
-        VerticesTest { position: [0.0, 0.0, 0.0] },
-        VerticesTest { position: [0.0, 0.0, 1.0] },
-        VerticesTest { position: [1.0, 0.0, 1.0] },
-        VerticesTest { position: [1.0, 0.0, 0.0] },
-
-        VerticesTest { position: [1.0, 0.0, 1.0] },
-        VerticesTest { position: [1.0, 1.0, 1.0] },
-        VerticesTest { position: [1.0, 1.0, 0.0] },
-        VerticesTest { position: [1.0, 1.0, 1.0] },
-
-        VerticesTest { position: [0.0, 1.0, 1.0] },
-        VerticesTest { position: [0.0, 1.0, 0.0] },
-        VerticesTest { position: [0.0, 1.0, 1.0] },
-        VerticesTest { position: [0.0, 0.0, 1.0] },
-    ];
-
-    let vertex_buffer = glium::vertex::VertexBuffer::new(&display, data).unwrap();
-    let indices = glium::index::NoIndices(glium::index::PrimitiveType::LineStrip);
-
-    let vertex_shader_src = r#"
-    #version 330
-
-    uniform mat4 mvpMatrix;
-    in vec3 position;
-
-    void main() {
-        gl_Position = mvpMatrix * vec4(position, 1.0);
-    }
-"#;
-
-    let fragment_shader_src = r#"
-    #version 330
-
-    out vec4 color;
-
-    void main() {
-        color = vec4(1.0, 0.0, 0.0, 1.0);
-    }
-"#;
-
-    let program = glium::Program::from_source(&display, vertex_shader_src, fragment_shader_src, None).unwrap();
-
     let params = glium::DrawParameters {
     depth: glium::Depth {
         test: glium::draw_parameters::DepthTest::IfLess,
@@ -98,6 +44,8 @@ fn main() {
     },
     .. Default::default()
     };
+
+    let data_vol_renderer = DataVolumeBoundingBoxRenderer::new(&display, &params);
 
     // Timer for FPS calculation
     let mut last_frame = std::time::Instant::now();
@@ -148,8 +96,7 @@ fn main() {
                 // Renderer doesn't automatically clear window
                 target.clear_color_srgb_and_depth((0.0, 0.0, 0.0, 1.0), 1.0);
 
-                target.draw(&vertex_buffer, &indices, &program, &uniform! { mvpMatrix: mvp_matrix },
-                    &params).unwrap();
+                data_vol_renderer.draw(&mut target, mvp_matrix);
 
                 // Perform rendering
                 winit_platform.prepare_render(ui, &window);
