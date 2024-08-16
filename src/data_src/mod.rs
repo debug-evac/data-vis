@@ -30,20 +30,47 @@ impl CartesianDataGrid {
 
     fn get_ptr(&mut self) -> *mut c_float { self.data.as_mut_ptr() }
 
-    pub fn print_horizontal_values(&self, y: usize, ic: usize) {
-        assert!(y <= self.ys);
-        debug_assert!(ic < 3);
+    pub fn print_horizontal_values(&self, zi: usize, ci: usize) {
+        assert!(zi <= self.zs);
+        debug_assert!(ci < 3);
 
-        let y_level = y * self.zs * 3 + ic;
+        let xs_3 = self.xs * 3;
+        let start = zi * self.ys * xs_3 + ci;
+        let mut yi = self.ys;
 
-        for xi in 0..self.xs {
-            let row = y_level + xi * self.ys * self.zs * 3;
+        while yi > 0 {
+            yi -= 1;
+            let row = start + yi * xs_3;
 
-            for zi in 0..self.zs {
-                print!("{}\t", self.data.get(row + zi * 3).expect("Did not get value!"));
+            for xi in 0..self.xs {
+                print!("{}\t", self.data.get(row + xi * 3).expect("Did not get value!"));
             }
             
             println!("");
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_vec(&mut self, vec: Vec<f32>) {
+        assert!(self.xs * self.ys * self.zs * 3 == vec.len());
+
+        self.data = vec;
+    }
+}
+
+pub struct HorizontalSlice {
+    data: Vec<f32>,
+    xs: usize, ys: usize
+}
+
+impl HorizontalSlice {
+    fn new(xs: usize, ys: usize) -> Self {
+        let mut data = vec![0.0; xs * ys];
+        data.shrink_to_fit();
+
+        HorizontalSlice {
+            data,
+            xs, ys
         }
     }
 }
@@ -51,6 +78,7 @@ impl CartesianDataGrid {
 pub struct FlowDataSource {
     array_size: usize,
     cartesian_data_grid_rs: CartesianDataGrid,
+    slice: HorizontalSlice
 }
 
 impl FlowDataSource {
@@ -60,13 +88,16 @@ impl FlowDataSource {
         let mut c_array: Vec<c_float> = vec![0.0; array_size];
         c_array.shrink_to_fit();
 
+        let slice = HorizontalSlice::new(xs, ys);
+
         FlowDataSource {
             array_size,
-            cartesian_data_grid_rs
+            cartesian_data_grid_rs,
+            slice
         }
     }
 
-    fn gen_tornado(&mut self, time: i32) {
+    pub fn gen_tornado(&mut self, time: i32) {
         unsafe { gen_tornado(
             self.cartesian_data_grid_rs.get_xs() as i32,
             self.cartesian_data_grid_rs.get_ys() as i32,
@@ -75,7 +106,23 @@ impl FlowDataSource {
         }
     }
 
-    fn get_values(&self) -> &CartesianDataGrid {
+    pub fn get_all_values(&self) -> &CartesianDataGrid {
         &self.cartesian_data_grid_rs
+    }
+
+    pub fn get_horizontal_values(&self) -> &HorizontalSlice {
+        &self.slice
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_gen_tornado() {
+        let mut flowsrc = FlowDataSource::new(16, 16, 16);
+        flowsrc.gen_tornado(1);
+        flowsrc.cartesian_data_grid_rs.print_horizontal_values(10, 0);
     }
 }

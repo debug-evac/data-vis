@@ -3,8 +3,7 @@ mod data_volume_cube;
 
 use std::num::NonZeroU32;
 
-use data_volume_cube::DataVolumeBoundingBoxRenderer;
-use glium::{Surface, implement_vertex, uniform};
+use glium::Surface;
 use glutin::{
     config::ConfigTemplateBuilder,
     context::{ContextAttributesBuilder, NotCurrentGlContext},
@@ -22,6 +21,8 @@ use nalgebra::{
     Point3, 
     base::{Matrix4, Vector3}
 };
+
+use data_volume_cube::DataVolumeBoundingBoxRenderer;
 
 const TITLE: &str = "Hello, imgui-rs!";
 
